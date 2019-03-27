@@ -8,8 +8,7 @@
 		"outDir": "./build/"
 	},
 	"include": [
-		"index.ts",
-		"test/test.ts"
+		"index.ts"
 	],
 	"exclude": [
 		"node_modules"

@@ -48,8 +48,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 exports.__esModule = true;
-var net = require('net');
-var events = require('events');
+var events = require("events");
+var net = require("net");
 var hashring = require("hashring");
 var Pool = require("pg-pool");
 var EOFMessageList = {
@@ -75,30 +75,37 @@ var Client = /** @class */ (function (_super) {
         _this.host = config.host;
         _this.port = config.port;
         _this.socket = null;
-        _this.activeQuery = null;
+        _this.connecting = false;
         _this.connected = false;
-        _this.commandTimeoutMillis = config.commandTimeoutMillis;
+        if (typeof config.commandTimeoutMillis === 'number' && config.commandTimeoutMillis > 0) {
+            _this.commandTimeoutMillis = config.commandTimeoutMillis;
+        }
+        else {
+            _this.commandTimeoutMillis = 0;
+        }
         return _this;
     }
     Client.prototype.connect = function (cb) {
         var _this = this;
-        if (this.connected === true) {
+        if (this.connecting === true || this.connected === true) {
             cb(new Error("Cannot call connect() twice on a client."));
             return;
         }
         var cbCalled = false;
-        this.socket = net.connect({
+        var socket = net.connect({
             host: this.host,
             port: this.port
         });
-        this.socket.setNoDelay(true);
+        this.connecting = true;
+        socket.setNoDelay(true);
+        this.socket = socket;
         var onError = function (err) {
             if (!cbCalled) {
                 cbCalled = true;
             }
             cb(err);
         };
-        this.socket.on('error', onError);
+        socket.on('error', onError);
         var onTimeout = function (err) {
             if (!cbCalled) {
                 cbCalled = true;
@@ -108,8 +115,8 @@ var Client = /** @class */ (function (_super) {
         this.socket.on('timeout', onTimeout);
         this.socket.on('ready', function () {
             _this.connected = true;
-            _this.socket.removeListener('error', onError);
-            _this.socket.removeListener('timeout', onError);
+            socket.removeListener('error', onError);
+            socket.removeListener('timeout', onError);
             cbCalled = true;
             cb(null, _this);
         });
@@ -118,16 +125,23 @@ var Client = /** @class */ (function (_super) {
         return this.host + ':' + this.port.toString();
     };
     Client.prototype.end = function () {
-        this.socket.destroy();
+        if (this.socket) {
+            this.socket.destroy();
+        }
     };
     Client.prototype.command = function (s) {
         var _this = this;
         return new Promise(function (resolve, reject) {
+            if (_this.socket === null) {
+                reject(new Error("cannot issue commands on null socket"));
+                return;
+            }
+            var socket = _this.socket;
             var tid;
             if (_this.commandTimeoutMillis > 0) {
                 tid = setTimeout(function () {
-                    _this.socket.removeListener('error', onError);
-                    _this.socket.removeListener('data', parseResponse);
+                    socket.removeListener('error', onError);
+                    socket.removeListener('data', parseResponse);
                     reject(new Error('command timed out'));
                 }, _this.commandTimeoutMillis);
             }
@@ -135,9 +149,9 @@ var Client = /** @class */ (function (_super) {
                 if (tid) {
                     clearTimeout(tid);
                 }
-                _this.socket.removeListener('error', onError);
-                _this.socket.removeListener('data', parseResponse);
-                _this.socket.destroy(err);
+                socket.removeListener('error', onError);
+                socket.removeListener('data', parseResponse);
+                socket.destroy(err);
                 reject(err);
             };
             var bufs = [];
@@ -146,18 +160,18 @@ var Client = /** @class */ (function (_super) {
                 bufs.push(chunk);
                 size += chunk.length;
                 if (isEOF(chunk)) {
-                    _this.socket.removeListener('error', onError);
-                    _this.socket.removeListener('data', parseResponse);
+                    socket.removeListener('error', onError);
+                    socket.removeListener('data', parseResponse);
                     if (tid) {
                         clearTimeout(tid);
                     }
                     resolve(Buffer.concat(bufs, size));
                 }
             };
-            _this.socket.on('data', parseResponse);
-            _this.socket.on('error', onError);
+            socket.on('data', parseResponse);
+            socket.on('error', onError);
             var buf = Buffer.concat([Buffer.from(s, 'utf8'), Buffer.from(CRLF)]);
-            _this.socket.write(buf);
+            socket.write(buf);
         });
     };
     return Client;

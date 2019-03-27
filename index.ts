@@ -1,5 +1,5 @@
-const net = require('net')
-const events = require('events')
+import * as events from "events"
+import * as net from "net"
 
 import * as hashring from "hashring"
 import * as Pool from "pg-pool"
@@ -24,34 +24,47 @@ const FLAG_BINARY = 1<<2
 const FLAG_NUMERIC = 1<<3;
 
 class Client extends events.EventEmitter {
+	private host: string
+	private port: number
+	private socket: net.Socket|null
+	private connecting: boolean
+	private connected: boolean
+	private commandTimeoutMillis: number
+
 	constructor(config) {
 		super()
 		this.host = config.host
 		this.port = config.port
 		this.socket = null
-		this.activeQuery = null
+		this.connecting = false
 		this.connected = false
-		this.commandTimeoutMillis = config.commandTimeoutMillis
+		if (typeof config.commandTimeoutMillis === 'number' && config.commandTimeoutMillis > 0) {
+			this.commandTimeoutMillis = config.commandTimeoutMillis
+		} else {
+			this.commandTimeoutMillis = 0
+		}
 	}
 
 	connect(cb) {
-		if (this.connected === true) {
+		if (this.connecting === true || this.connected === true) {
 			cb(new Error("Cannot call connect() twice on a client."))
 			return
 		}
 		let cbCalled = false
-		this.socket = net.connect({
+		const socket = net.connect({
 			host: this.host,
 			port: this.port,
 		})
-		this.socket.setNoDelay(true)
+		this.connecting = true
+		socket.setNoDelay(true)
+		this.socket = socket
 		const onError = (err) => {
 			if (!cbCalled) {
 				cbCalled = true
 			}
 			cb(err)
 		}
-		this.socket.on('error', onError)
+		socket.on('error', onError)
 		const onTimeout = (err) => {
 			if (!cbCalled) {
 				cbCalled = true
@@ -61,8 +74,8 @@ class Client extends events.EventEmitter {
 		this.socket.on('timeout', onTimeout)
 		this.socket.on('ready', () => {
 			this.connected = true
-			this.socket.removeListener('error', onError)
-			this.socket.removeListener('timeout', onError)
+			socket.removeListener('error', onError)
+			socket.removeListener('timeout', onError)
 			cbCalled = true
 			cb(null, this)
 		})
@@ -73,16 +86,23 @@ class Client extends events.EventEmitter {
 	}
 
 	end() {
-		this.socket.destroy()
+		if (this.socket) {
+			this.socket.destroy()
+		}
 	}
 
 	command(s) {
 		return new Promise((resolve, reject) => {
+			if (this.socket === null) {
+				reject(new Error("cannot issue commands on null socket"))
+				return
+			}
+			const socket = this.socket
 			let tid
 			if (this.commandTimeoutMillis > 0) {
 				tid = setTimeout(() => {
-					this.socket.removeListener('error', onError)
-					this.socket.removeListener('data', parseResponse)
+					socket.removeListener('error', onError)
+					socket.removeListener('data', parseResponse)
 					reject(new Error('command timed out'))
 				}, this.commandTimeoutMillis)
 			}
@@ -90,9 +110,9 @@ class Client extends events.EventEmitter {
 				if (tid) {
 					clearTimeout(tid)
 				}
-				this.socket.removeListener('error', onError)
-				this.socket.removeListener('data', parseResponse)
-				this.socket.destroy(err)
+				socket.removeListener('error', onError)
+				socket.removeListener('data', parseResponse)
+				socket.destroy(err)
 				reject(err)
 			}
 			const bufs: Buffer[] = []
@@ -101,18 +121,18 @@ class Client extends events.EventEmitter {
 				bufs.push(chunk)
 				size += chunk.length
 				if (isEOF(chunk)) {
-					this.socket.removeListener('error', onError)
-					this.socket.removeListener('data', parseResponse)
+					socket.removeListener('error', onError)
+					socket.removeListener('data', parseResponse)
 					if (tid) {
 						clearTimeout(tid)
 					}
 					resolve(Buffer.concat(bufs, size))
 				}
 			}
-			this.socket.on('data', parseResponse)
-			this.socket.on('error', onError)
+			socket.on('data', parseResponse)
+			socket.on('error', onError)
 			let buf = Buffer.concat([Buffer.from(s, 'utf8'), Buffer.from(CRLF)])
-			this.socket.write(buf)
+			socket.write(buf)
 		})
 	}
 }
