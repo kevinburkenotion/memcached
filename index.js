@@ -139,6 +139,21 @@ const isEOF = function(buffer) {
     return EOFMessageList[code] === true
 }
 
+const execCommand = async function(pool, command) {
+    const client = await pool.connect()
+    let err, result
+    try {
+        result = await client.command(command)
+    } catch (e) {
+        err = e
+    }
+    client.release(err)
+    if (err) {
+        throw err
+    }
+    return result
+}
+
 const convertValue = function(flag, buf) {
     let result;
     switch (flag) {
@@ -237,25 +252,15 @@ class MemcachedPool {
         await Promise.all(Object.entries(keysByPool).map(async (entry) => {
             const idx = entry[0]
             const poolKeys = entry[1]
-            const client = await this.pools[idx].connect()
             const command = 'get ' + poolKeys.join(' ')
-            let buffer;
-            try {
-                buffer = await client.command(command)
-                client.release()
-            } catch (e) {
-                client.release(e)
-                throw e
-            }
+            const buffer = await execCommand(this.pools[idx], command)
             let index = 0;
 
-            let count = 0
             while (true) {
-                count++
-                if (count > 1000) {
-                    throw new Error('infinite loop reached')
-                }
                 const delim = buffer.indexOf(CRLF, index);
+                if (delim === -1) {
+                    throw new Error("getmulti: malformed response data: could not find CRLF or END" + buffer.slice(index).toString('utf8'))
+                }
                 const meta = buffer.slice(index, delim).toString('utf8').split(' ');
                 if (meta[0] === 'END') {
                     break;
@@ -272,15 +277,7 @@ class MemcachedPool {
     }
 
     async get(key) {
-        const client = await this._getPool(key).connect()
-        let result;
-        try {
-            result = await client.command('get ' + key)
-            client.release()
-        } catch (e) {
-            client.release(e)
-            throw e
-        }
+        const result = await execCommand(this._getPool(key), 'get ' + key)
         const code = getCode(result)
         switch (code) {
             case 'END':
@@ -303,7 +300,6 @@ class MemcachedPool {
     }
 
     async set(key, val, lifetimeSeconds) {
-        const client = await this._getPool(key).connect()
         let flag = 0
         let value;
         const valuetype = typeof val
@@ -320,14 +316,7 @@ class MemcachedPool {
             value = val
         }
         const data = `set ${key} ${flag} ${lifetimeSeconds.toString()} ${Buffer.byteLength(value)}\r\n${value}`
-        let result;
-        try {
-            result = await client.command(data)
-            client.release()
-        } catch (e) {
-            client.release(e)
-            throw e
-        }
+        const result = await execCommand(this._getPool(key), data)
         const code = getCode(result)
         switch (code) {
             case 'STORED':
@@ -346,16 +335,8 @@ class MemcachedPool {
     }
 
     async delete(key) {
-        const client = await this._getPool(key).connect()
         const data = `delete ${key}`
-        let result;
-        try {
-            result = await client.command(data)
-            client.release()
-        } catch (e) {
-            client.release(e)
-            throw e
-        }
+        const result = await execCommand(this._getPool(key), data)
         const code = getCode(result)
         switch (code) {
             case 'DELETED':
