@@ -454,11 +454,17 @@ var MemcachedPool = /** @class */ (function () {
         return __awaiter(this, void 0, void 0, function () {
             var results, i;
             return __generator(this, function (_a) {
-                results = [];
-                for (i = 0; i < this.pools.length; i++) {
-                    results.push(this.pools[i].end());
+                switch (_a.label) {
+                    case 0:
+                        results = [];
+                        for (i = 0; i < this.pools.length; i++) {
+                            results.push(this.pools[i].end());
+                        }
+                        return [4 /*yield*/, Promise.all(results)];
+                    case 1:
+                        _a.sent();
+                        return [2 /*return*/];
                 }
-                return [2 /*return*/, Promise.all(results)];
             });
         });
     };

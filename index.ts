@@ -95,7 +95,7 @@ class Client extends events.EventEmitter {
 				this.socket.destroy(err)
 				reject(err)
 			}
-			const bufs = []
+			const bufs: Buffer[] = []
 			let size = 0
 			const parseResponse = (chunk) => {
 				bufs.push(chunk)
@@ -350,12 +350,13 @@ class MemcachedPool {
 		return result
 	}
 
-	async end() {
-		let results = []
+	async end(): Promise<void> {
+		let results: any = []
 		for (var i = 0; i < this.pools.length; i++) {
 			results.push(this.pools[i].end())
 		}
-		return Promise.all(results)
+		await Promise.all(results)
+		return
 	}
 }
 
