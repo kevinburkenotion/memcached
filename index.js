@@ -55,6 +55,10 @@ class Client extends events.EventEmitter {
         })
     }
 
+    hash() {
+        return this.host + ':' + this.port.toString()
+    }
+
     end() {
         this.socket.destroy()
     }
@@ -167,13 +171,51 @@ module.exports = class MemcachedPool {
         }
     }
 
-    _getPool(key) {
+    _getPoolIndex(key) {
         if (this.pools.length === 1) {
-            return this.pools[0]
+            return 0
         }
         const rawHost = this.hashring.get(key)
         const idx = this._indexMap[rawHost]
-        return this.pools[idx]
+        return idx
+    }
+
+    _getPool(key) {
+        return this.pools[this._getPoolIndex(key)]
+    }
+
+    async getMulti(keys) {
+        let keysByPool = {}
+        keys.map((key) => {
+            const idx = this._getPoolIndex(key)
+            if (typeof keysByPool[idx] === 'undefined') {
+                keysByPool[idx] = []
+            }
+            keysByPool[idx].push(key)
+        })
+        const results = {};
+        await Promise.all(Object.entries(keysByPool).map(async (entry) => {
+            const idx = entry[0]
+            const keys = entry[1]
+            const pool = this.pools[idx]
+            const client = await pool.connect()
+            const buffer = await client.command('get ' + keys.join(' '))
+            await client.release()
+            let index = 0;
+
+            while (true) {
+                const delim = buffer.indexOf(CRLF, index);
+                const meta = buffer.slice(index, delim).toString('utf8').split(' ');
+                if (meta[0] === 'END') {
+                    break;
+                }
+                index = delim + CRLF_LENGTH;
+                const dataSize = parseInt(meta[3], 10);
+                results[meta[1]] = buffer.slice(index, index + dataSize).toString('utf8')
+                index += dataSize + CRLF_LENGTH;
+            }
+        }))
+        return results
     }
 
     async get(key) {

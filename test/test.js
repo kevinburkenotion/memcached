@@ -27,14 +27,19 @@ describe('memcached', () => {
             await pool.end()
         })
 
+
+    })
+
+    describe('getMulti', () => {
         it('can get multiple keys', async () => {
             const pool = new MemcachedPool('localhost:11211')
             const randKey = "test-"+Math.floor(Math.random()*1000000).toString()
             await pool.set(randKey+"-one", 'one', 5000)
             await pool.set(randKey+"-three", 'three', 5000)
             await pool.set(randKey+"-two", 'two', 5000)
-            const val = await pool.get(randKey)
-            expect(val).toBe(null)
+            const val = await pool.getMulti([randKey+"-one", randKey+"-two", randKey+"-three"])
+            expect(Object.keys(val).length).toBe(3)
+            expect(val[randKey+"-two"]).toBe('two')
             await pool.end()
         })
     })
