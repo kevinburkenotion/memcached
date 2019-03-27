@@ -150,7 +150,7 @@ describe('memcached', () => {
             const pool = new memcached.MemcachedPool('localhost:11211')
             const key = randKey()
             await pool.set(key, 'foo', 5000)
-            await pool.get(key)
+            await pool.del(key)
             const result = await pool.get(key)
             expect(result).toBe(null)
             await pool.end()

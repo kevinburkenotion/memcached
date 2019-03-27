@@ -7,7 +7,10 @@
 		"lib": ["es6", "es2017", "dom", "scripthost", "esnext.asynciterable"],
 		"outDir": "./build/"
 	},
-	"include": ["index.ts"],
+	"include": [
+		"index.ts",
+		"test/test.ts"
+	],
 	"exclude": [
 		"node_modules"
 	]
