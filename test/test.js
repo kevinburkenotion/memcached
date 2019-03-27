@@ -129,10 +129,10 @@ describe('memcached', () => {
         })
     })
 
-    describe('delete', () => {
+    describe('del', () => {
         it('returns NOT_FOUND when deleting a key that does not exist', async () => {
             const pool = new memcached.MemcachedPool('localhost:11211')
-            const result = await pool.delete(randKey())
+            const result = await pool.del(randKey())
             expect(result).toBe('NOT_FOUND')
             await pool.end()
         })
@@ -141,7 +141,7 @@ describe('memcached', () => {
             const pool = new memcached.MemcachedPool('localhost:11211')
             const key = randKey()
             await pool.set(key, 'foo', 5000)
-            const val = await pool.delete(key)
+            const val = await pool.del(key)
             expect(val).toBe('DELETED')
             await pool.end()
         })
@@ -150,7 +150,7 @@ describe('memcached', () => {
             const pool = new memcached.MemcachedPool('localhost:11211')
             const key = randKey()
             await pool.set(key, 'foo', 5000)
-            await pool.delete(key)
+            await pool.get(key)
             const result = await pool.get(key)
             expect(result).toBe(null)
             await pool.end()

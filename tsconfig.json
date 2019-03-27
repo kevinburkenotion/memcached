@@ -1,0 +1,13 @@
+{
+	"version": "2.3.4",
+	"compilerOptions": {
+		"allowJs": true,
+		"noImplicitThis": true,
+		"strictNullChecks": true,
+		"lib": ["es6", "es2017", "dom", "scripthost", "esnext.asynciterable"],
+		"outDir": "./build/"
+	},
+	"exclude": [
+		"node_modules"
+	]
+}

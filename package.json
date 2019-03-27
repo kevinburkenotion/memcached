@@ -10,7 +10,8 @@
   "license": "ISC",
   "devDependencies": {
     "expect": "^24.5.0",
-    "mocha": "^6.0.2"
+    "mocha": "^6.0.2",
+    "typescript": "latest"
   },
   "dependencies": {
     "hashring": "^3.2.0",
