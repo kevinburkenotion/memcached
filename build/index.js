@@ -121,9 +121,6 @@ var Client = /** @class */ (function (_super) {
             cb(null, _this);
         });
     };
-    Client.prototype.hash = function () {
-        return this.host + ':' + this.port.toString();
-    };
     Client.prototype.end = function () {
         if (this.socket) {
             this.socket.destroy();

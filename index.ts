@@ -81,10 +81,6 @@ class Client extends events.EventEmitter {
 		})
 	}
 
-	hash() {
-		return this.host + ':' + this.port.toString()
-	}
-
 	end() {
 		if (this.socket) {
 			this.socket.destroy()
