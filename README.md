@@ -10,4 +10,11 @@ The tests are probably the best place to start, but:
 
 ```typescript
 const memcached = require('..')
-const pool = new memcached.MemcachedPool('localhost:11211', 10, 1000, 1)
+const pool = new memcached.MemcachedPool(['localhost:11211'], {
+    connectionsPerHost: 10,
+    // How much time to wait to acquire a free connection
+    connectionTimeoutMillis: 1000,
+    // How much time to wait for a response from Memcached
+    commandTimeoutMillis: 5000,
+})
+```

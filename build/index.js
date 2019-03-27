@@ -244,7 +244,7 @@ var convertValue = function (flag, buf) {
 };
 var MemcachedPool = /** @class */ (function () {
     // hosts: string or array
-    function MemcachedPool(hosts, connectionsPerHost, connectionTimeoutMillis, commandTimeoutMillis) {
+    function MemcachedPool(hosts, options) {
         if (typeof hosts === 'undefined') {
             hosts = ['localhost:11211'];
         }
@@ -257,8 +257,17 @@ var MemcachedPool = /** @class */ (function () {
         if (hosts.length === 0) {
             throw new Error('memcached: specify at least one host to connect to');
         }
+        var connectionsPerHost = options.connectionsPerHost;
         if (typeof connectionsPerHost === 'undefined') {
             connectionsPerHost = 5;
+        }
+        var connectionTimeoutMillis = options.connectionTimeoutMillis;
+        if (typeof connectionTimeoutMillis === 'undefined') {
+            connectionTimeoutMillis = 30 * 1000;
+        }
+        var commandTimeoutMillis = options.commandTimeoutMillis;
+        if (typeof commandTimeoutMillis === 'undefined') {
+            commandTimeoutMillis = 30 * 1000;
         }
         // backwards compat with existing hashring implementation in
         // 3rd-Eden/memcached

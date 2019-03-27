@@ -194,13 +194,22 @@ const convertValue = function(flag, buf) {
 	return result
 }
 
+interface poolOptions {
+	// defaults to 5
+	connectionsPerHost: number|undefined
+	// defaults to 30 seconds
+	connectionTimeoutMillis: number|undefined
+	// defaults to 30 seconds
+	commandTimeoutMillis: number|undefined
+}
+
 class MemcachedPool {
 	private indexMap: { [s: string]: number; }
 	private pools: Pool[]
 	private hashring: hashring
 
 	// hosts: string or array
-	constructor(hosts, connectionsPerHost, connectionTimeoutMillis, commandTimeoutMillis) {
+	constructor(hosts: string|string[]|undefined, options: poolOptions) {
 		if (typeof hosts === 'undefined') {
 			hosts = ['localhost:11211']
 		} else if (typeof hosts === 'string') {
@@ -212,8 +221,17 @@ class MemcachedPool {
 		if (hosts.length === 0) {
 			throw new Error('memcached: specify at least one host to connect to')
 		}
+		let connectionsPerHost = options.connectionsPerHost
 		if (typeof connectionsPerHost === 'undefined') {
 			connectionsPerHost = 5
+		}
+		let connectionTimeoutMillis = options.connectionTimeoutMillis
+		if (typeof connectionTimeoutMillis === 'undefined') {
+			connectionTimeoutMillis = 30*1000
+		}
+		let commandTimeoutMillis = options.commandTimeoutMillis
+		if (typeof commandTimeoutMillis === 'undefined') {
+			commandTimeoutMillis = 30*1000
 		}
 		// backwards compat with existing hashring implementation in
 		// 3rd-Eden/memcached
