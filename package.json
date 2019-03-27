@@ -11,6 +11,7 @@
   "devDependencies": {
     "expect": "^24.5.0",
     "mocha": "^6.0.2",
+    "ts-mocha": "latest",
     "typescript": "latest"
   },
   "dependencies": {
