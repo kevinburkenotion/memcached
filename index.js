@@ -180,7 +180,7 @@ module.exports = class MemcachedPool {
             case 'DELETED':
                 return 'DELETED'
             case 'NOT_FOUND':
-                return 'EXISTS'
+                return 'NOT_FOUND'
             default:
                 throw new Error(`delete ${key}: unknown response ${code}`)
         }
