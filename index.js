@@ -119,22 +119,53 @@ const isEOF = function(buffer) {
 }
 
 module.exports = class MemcachedPool {
-    constructor(host, port, poolSize, connectionTimeoutMillis) {
-        if (typeof poolSize === 'undefined') {
-            poolSize = 5
+    // hosts: string or array
+    constructor(hosts, connectionsPerHost, connectionTimeoutMillis) {
+        if (typeof hosts === 'undefined') {
+            hosts = ['localhost:11211']
+        } else if (typeof hosts === 'string') {
+            hosts = [hosts]
         }
-        var config = Object.assign({Client: Client}, {
-            host: host,
-            port: port,
-            max: poolSize,
-            min: poolSize,
-            connectionTimeoutMillis: connectionTimeoutMillis,
-        })
-        this.pool = new Pool(config)
+        if (typeof connectionsPerHost === 'undefined') {
+            connectionsPerHost = 5
+        }
+        // backwards compat with existing hashring implementation in
+        // 3rd-Eden/memcached
+        this.hashring = new hashring.HashRing(hosts, 'md5', {
+            compatibility: 'ketama',
+            'default port': 11211,
+        });
+        this.pools = []
+        for (var i = 0; i < hosts.length; i++) {
+            let host = hosts[i];
+            let port = 11211;
+            let portIndex = host.indexOf(':')
+            if (portIndex >= 0) {
+                port = parseInt(host.slice(portIndex+1), 10)
+                if (isNaN(port)) {
+                    throw new Error("could not parse host:port value: " + host)
+                }
+                host = host.slice(0, portIndex)
+            }
+            var config = Object.assign({Client: Client}, {
+                host: host,
+                port: port,
+                max: connectionsPerHost,
+                min: connectionsPerHost,
+                connectionTimeoutMillis: connectionTimeoutMillis,
+            })
+            this.pools[i] = new Pool(config)
+        }
+    }
+
+    _getPool(key) {
+        if (this.pools.length === 1) {
+            return this.pools[0]
+        }
     }
 
     async get(key) {
-        const client = await this.pool.connect()
+        const client = await this._getPool(key).connect()
         const result = await client.command('get ' + key)
         await client.release()
         const code = getCode(result)
@@ -158,7 +189,7 @@ module.exports = class MemcachedPool {
     }
 
     async set(key, val, lifetimeSeconds) {
-        const client = await this.pool.connect()
+        const client = await this._getPool(key).connect()
         const data = `set ${key} 0 ${lifetimeSeconds.toString()} ${val.length}\r\n${val}`
         const result = await client.command(data)
         await client.release()
@@ -180,7 +211,7 @@ module.exports = class MemcachedPool {
     }
 
     async delete(key) {
-        const client = await this.pool.connect()
+        const client = await this._getPool(key).connect()
         const data = `delete ${key}`
         const result = await client.command(data)
         await client.release()
@@ -197,6 +228,10 @@ module.exports = class MemcachedPool {
     }
 
     async end() {
-        return this.pool.end()
+        let results = []
+        for (var i = 0; i < this.pools.length; i++) {
+            results.push(this.pools[i].end())
+        }
+        return Promise.all(results)
     }
 }
