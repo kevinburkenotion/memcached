@@ -92,15 +92,30 @@ describe('memcached', () => {
             const pool = new MemcachedPool('localhost:11211', 1, 100)
             const client = await pool.pools[0].connect()
             try {
-                console.log('trying to connect')
                 await pool.pools[0].connect()
                 expect(true).toBe(false) // shouldn't reach here
             } catch (e) {
                 expect(e.message).toBe("timeout exceeded when trying to connect")
             }
-            console.log('release')
             await client.release()
-            console.log('end')
+            await pool.end()
+        })
+
+        it('can reuse connection', async () => {
+            const pool = new MemcachedPool('localhost:11211', 1)
+            const randKey = "test-"+Math.floor(Math.random()*1000000).toString()
+            await pool.set(randKey, 'foo', 5000)
+            expect((await pool.get(randKey)).toString()).toBe('foo')
+            await pool.set(randKey, 'bar', 5000)
+            expect((await pool.get(randKey)).toString()).toBe('bar')
+            expect((await pool.get(randKey)).toString()).toBe('bar')
+            await pool.end()
+        })
+
+        it('can use multiple internal pools', async () => {
+            const pool = new MemcachedPool(['localhost:11211', '127.0.0.1:11211'], 1)
+            const randKey = "test-"+Math.floor(Math.random()*1000000).toString()
+            await pool.set(randKey, 'foo', 5000)
             await pool.end()
         })
     })

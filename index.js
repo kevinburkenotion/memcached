@@ -1,6 +1,7 @@
 const net = require('net')
 const events = require('events')
 
+const hashring = require('hashring')
 const Pool = require('pg-pool')
 
 const EOFMessageList = {
@@ -126,15 +127,23 @@ module.exports = class MemcachedPool {
         } else if (typeof hosts === 'string') {
             hosts = [hosts]
         }
+        if (!Array.isArray(hosts)) {
+            throw new Error('hosts argument should be undefined, a string, or an array')
+        }
         if (typeof connectionsPerHost === 'undefined') {
             connectionsPerHost = 5
         }
         // backwards compat with existing hashring implementation in
         // 3rd-Eden/memcached
-        this.hashring = new hashring.HashRing(hosts, 'md5', {
+        this.hashring = new hashring(hosts, 'md5', {
             compatibility: 'ketama',
             'default port': 11211,
         });
+        // need to reverse out the hashring logic
+        this._indexMap = {}
+        for (var i = 0; i < hosts.length; i++) {
+            this._indexMap[hosts[i]] = i
+        }
         this.pools = []
         for (var i = 0; i < hosts.length; i++) {
             let host = hosts[i];
@@ -162,6 +171,9 @@ module.exports = class MemcachedPool {
         if (this.pools.length === 1) {
             return this.pools[0]
         }
+        const rawHost = this.hashring.get(key)
+        const idx = this._indexMap[rawHost]
+        return this.pools[idx]
     }
 
     async get(key) {
