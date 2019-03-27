@@ -75,4 +75,19 @@ describe('memcached', () => {
             await pool.end()
         })
     })
+
+    describe('pool', () => {
+        it('returns an error if a pool object is not available', async () => {
+            const pool = new MemcachedPool('localhost', 11211, 1, 100)
+            const client = await pool.pool.connect()
+            try {
+                await pool.pool.connect()
+                expect(true).toBe(false) // shouldn't reach here
+            } catch (e) {
+                expect(e.message).toBe("timeout exceeded when trying to connect")
+            }
+            await client.release()
+            await pool.end()
+        })
+    })
 })

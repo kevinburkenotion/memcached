@@ -119,8 +119,17 @@ const isEOF = function(buffer) {
 }
 
 module.exports = class MemcachedPool {
-    constructor(host, port) {
-        var config = Object.assign({Client: Client}, {host: host, port: port})
+    constructor(host, port, poolSize, connectionTimeoutMillis) {
+        if (typeof poolSize === 'undefined') {
+            poolSize = 5
+        }
+        var config = Object.assign({Client: Client}, {
+            host: host,
+            port: port,
+            max: poolSize,
+            min: poolSize,
+            connectionTimeoutMillis: connectionTimeoutMillis,
+        })
         this.pool = new Pool(config)
     }
 
