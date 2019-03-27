@@ -18,6 +18,10 @@ const EOFMessageList = {
 const CRLF = '\r\n';
 const CRLF_LENGTH = CRLF.length;
 
+const FLAG_JSON = 1<<1
+const FLAG_BINARY = 1<<2
+const FLAG_NUMERIC = 1<<3;
+
 class Client extends events.EventEmitter {
     constructor(config) {
         super()
@@ -123,7 +127,27 @@ const isEOF = function(buffer) {
     return EOFMessageList[code] === true
 }
 
-module.exports = class MemcachedPool {
+const convertValue = function(flag, buf) {
+    let result;
+    switch (flag) {
+        case FLAG_JSON:
+            result = JSON.parse(buf.toString('utf8'));
+            break;
+        case FLAG_NUMERIC:
+            result = +buf.toString();
+            break;
+        case FLAG_BINARY:
+            tmp = new Buffer(buf.length);
+            tmp.write(buf, 0, 'binary');
+            result = tmp;
+            break;
+        default:
+            result = buf.toString('utf8')
+    }
+    return result
+}
+
+class MemcachedPool {
     // hosts: string or array
     constructor(hosts, connectionsPerHost, connectionTimeoutMillis) {
         if (typeof hosts === 'undefined') {
@@ -211,7 +235,9 @@ module.exports = class MemcachedPool {
                 }
                 index = delim + CRLF_LENGTH;
                 const dataSize = parseInt(meta[3], 10);
-                results[meta[1]] = buffer.slice(index, index + dataSize).toString('utf8')
+                const resultBuf = buffer.slice(index, index + dataSize).toString('utf8')
+                const flag = parseInt(meta[2], 10)
+                results[meta[1]] = convertValue(flag, resultBuf)
                 index += dataSize + CRLF_LENGTH;
             }
         }))
@@ -234,8 +260,9 @@ module.exports = class MemcachedPool {
                 let start = result.indexOf(CRLF);
                 const meta = result.slice(0, start).toString('utf8').split(' ');
                 start += CRLF_LENGTH;
-                const value = result.slice(start, start + parseInt(meta[3], 10));
-                return value
+                const resultBuf = result.slice(start, start + parseInt(meta[3], 10));
+                const flag = parseInt(meta[2], 10)
+                return convertValue(flag, resultBuf)
             default:
                 throw new Error(`get ${key}: unknown response ${code}`)
         }
@@ -244,7 +271,22 @@ module.exports = class MemcachedPool {
 
     async set(key, val, lifetimeSeconds) {
         const client = await this._getPool(key).connect()
-        const data = `set ${key} 0 ${lifetimeSeconds.toString()} ${val.length}\r\n${val}`
+        let flag = 0
+        let value;
+        const valuetype = typeof val
+        if (Buffer.isBuffer(val)) {
+            flag = FLAG_BINARY;
+            value = val.toString('binary');
+        } else if (valuetype === 'number') {
+            flag = FLAG_NUMERIC;
+            value = val.toString();
+        } else if (valuetype !== 'string') {
+            flag = FLAG_JSON;
+            value = JSON.stringify(val);
+        } else {
+            value = val
+        }
+        const data = `set ${key} ${flag} ${lifetimeSeconds.toString()} ${value.length}\r\n${value}`
         const result = await client.command(data)
         await client.release()
         const code = getCode(result)
@@ -289,3 +331,6 @@ module.exports = class MemcachedPool {
         return Promise.all(results)
     }
 }
+
+exports.MemcachedPool = MemcachedPool
+exports.default = MemcachedPool
