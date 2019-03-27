@@ -13,6 +13,19 @@ const randKey = function() {
 }
 
 describe('memcached', () => {
+    describe('timeout', () => {
+        it('times out if the query does not complete in time', async () => {
+            const pool = new memcached.MemcachedPool('localhost:11211', undefined, undefined, 1)
+            try {
+                const result = await pool.get('ping')
+                expect(true).toBe(false)
+            } catch (e) {
+                expect(e.message).toBe("command timed out")
+            }
+            await pool.end()
+        })
+    })
+
     describe('get', () => {
         it('returns null if a key is not present', async () => {
             const pool = new memcached.MemcachedPool('localhost:11211')
@@ -33,6 +46,20 @@ describe('memcached', () => {
     })
 
     describe('getMulti', () => {
+        it('returns if a single key is not found', async () => {
+            const pool = new memcached.MemcachedPool('localhost:11211')
+            const key = randKey()
+            const val = await pool.getMulti(['statusKey'])
+            expect(val).toStrictEqual({})
+            await pool.end()
+        })
+        it('returns if a single key is not found, multiple hosts', async () => {
+            const pool = new memcached.MemcachedPool(['localhost:11211', 'localhost:11211'])
+            const key = randKey()
+            const val = await pool.getMulti(['statusKey'])
+            expect(val).toStrictEqual({})
+            await pool.end()
+        })
         it('can get multiple keys', async () => {
             const pool = new memcached.MemcachedPool('localhost:11211')
             const key = randKey()
@@ -65,12 +92,30 @@ describe('memcached', () => {
             await pool.end()
         })
 
+        it('uses correct length for emoji data', async () => {
+            const pool = new memcached.MemcachedPool('localhost:11211')
+            const key = randKey()
+            await pool.set(key, '🤙 hang loose 🤙 hang loose', 5000)
+            const val = await pool.get(key)
+            expect(val).toBe('🤙 hang loose 🤙 hang loose')
+            await pool.end()
+        })
+
         it('sets JSON data', async () => {
             const pool = new memcached.MemcachedPool('localhost:11211')
             const key = randKey()
             const result = await pool.set(key, {'foo': [3, 4]}, 5000)
             const val = await pool.get(key)
             expect(val).toStrictEqual({'foo': [3, 4]})
+            await pool.end()
+        })
+
+        it('sets JSON array data', async () => {
+            const pool = new memcached.MemcachedPool('localhost:11211')
+            const key = randKey()
+            const result = await pool.set(key, ['foo', 1, 3, [7]], 5000)
+            const val = await pool.get(key)
+            expect(val).toStrictEqual(['foo', 1, 3, [7]])
             await pool.end()
         })
 

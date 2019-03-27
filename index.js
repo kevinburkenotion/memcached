@@ -13,6 +13,7 @@ const EOFMessageList = {
     'EXISTS': true,
     'TOUCHED': true,
     'DELETED': true,
+    'CLIENT_ERROR': true,
 };
 
 const CRLF = '\r\n';
@@ -28,9 +29,16 @@ class Client extends events.EventEmitter {
         this.host = config.host
         this.port = config.port
         this.socket = null
+        this.activeQuery = null
+        this.connected = false
+        this.commandTimeoutMillis = config.commandTimeoutMillis
     }
 
     connect(cb) {
+        if (this.connected === true) {
+            cb(new Error("Cannot call connect() twice on a client."))
+            return
+        }
         let cbCalled = false
         this.socket = net.connect({
             host: this.host,
@@ -52,6 +60,7 @@ class Client extends events.EventEmitter {
         }
         this.socket.on('timeout', onTimeout)
         this.socket.on('ready', () => {
+            this.connected = true
             this.socket.removeListener('error', onError)
             this.socket.removeListener('timeout', onError)
             cbCalled = true
@@ -69,7 +78,18 @@ class Client extends events.EventEmitter {
 
     command(s) {
         return new Promise((resolve, reject) => {
+            let tid
+            if (this.commandTimeoutMillis > 0) {
+                tid = setTimeout(() => {
+                    this.socket.removeListener('error', onError)
+                    this.socket.removeListener('data', parseResponse)
+                    reject(new Error('command timed out'))
+                }, this.commandTimeoutMillis)
+            }
             const onError = (err) => {
+                if (tid) {
+                    clearTimeout(tid)
+                }
                 this.socket.removeListener('error', onError)
                 this.socket.removeListener('data', parseResponse)
                 this.socket.destroy(err)
@@ -83,6 +103,9 @@ class Client extends events.EventEmitter {
                 if (isEOF(chunk)) {
                     this.socket.removeListener('error', onError)
                     this.socket.removeListener('data', parseResponse)
+                    if (tid) {
+                        clearTimeout(tid)
+                    }
                     resolve(Buffer.concat(bufs, size))
                 }
             }
@@ -94,17 +117,6 @@ class Client extends events.EventEmitter {
     }
 }
 
-
-const poolFactory = (Client) => {
-  var BoundPool = function (options) {
-    var config = Object.assign({ Client: Client }, options)
-    return new Pool(config)
-  }
-
-  util.inherits(BoundPool, Pool)
-
-  return BoundPool
-}
 
 const spaceChar = ' '.charCodeAt(0)
 const returnChar = '\r'.charCodeAt(0)
@@ -149,7 +161,7 @@ const convertValue = function(flag, buf) {
 
 class MemcachedPool {
     // hosts: string or array
-    constructor(hosts, connectionsPerHost, connectionTimeoutMillis) {
+    constructor(hosts, connectionsPerHost, connectionTimeoutMillis, commandTimeoutMillis) {
         if (typeof hosts === 'undefined') {
             hosts = ['localhost:11211']
         } else if (typeof hosts === 'string') {
@@ -157,6 +169,9 @@ class MemcachedPool {
         }
         if (!Array.isArray(hosts)) {
             throw new Error('hosts argument should be undefined, a string, or an array')
+        }
+        if (hosts.length === 0) {
+            throw new Error('memcached: specify at least one host to connect to')
         }
         if (typeof connectionsPerHost === 'undefined') {
             connectionsPerHost = 5
@@ -190,6 +205,7 @@ class MemcachedPool {
                 max: connectionsPerHost,
                 min: connectionsPerHost,
                 connectionTimeoutMillis: connectionTimeoutMillis,
+                commandTimeoutMillis: commandTimeoutMillis,
             })
             this.pools[i] = new Pool(config)
         }
@@ -220,14 +236,25 @@ class MemcachedPool {
         const results = {};
         await Promise.all(Object.entries(keysByPool).map(async (entry) => {
             const idx = entry[0]
-            const keys = entry[1]
-            const pool = this.pools[idx]
-            const client = await pool.connect()
-            const buffer = await client.command('get ' + keys.join(' '))
-            await client.release()
+            const poolKeys = entry[1]
+            const client = await this.pools[idx].connect()
+            const command = 'get ' + poolKeys.join(' ')
+            let buffer;
+            try {
+                buffer = await client.command(command)
+                client.release()
+            } catch (e) {
+                client.release(e)
+                throw e
+            }
             let index = 0;
 
+            let count = 0
             while (true) {
+                count++
+                if (count > 1000) {
+                    throw new Error('infinite loop reached')
+                }
                 const delim = buffer.indexOf(CRLF, index);
                 const meta = buffer.slice(index, delim).toString('utf8').split(' ');
                 if (meta[0] === 'END') {
@@ -246,8 +273,14 @@ class MemcachedPool {
 
     async get(key) {
         const client = await this._getPool(key).connect()
-        const result = await client.command('get ' + key)
-        await client.release()
+        let result;
+        try {
+            result = await client.command('get ' + key)
+            client.release()
+        } catch (e) {
+            client.release(e)
+            throw e
+        }
         const code = getCode(result)
         switch (code) {
             case 'END':
@@ -286,9 +319,15 @@ class MemcachedPool {
         } else {
             value = val
         }
-        const data = `set ${key} ${flag} ${lifetimeSeconds.toString()} ${value.length}\r\n${value}`
-        const result = await client.command(data)
-        await client.release()
+        const data = `set ${key} ${flag} ${lifetimeSeconds.toString()} ${Buffer.byteLength(value)}\r\n${value}`
+        let result;
+        try {
+            result = await client.command(data)
+            client.release()
+        } catch (e) {
+            client.release(e)
+            throw e
+        }
         const code = getCode(result)
         switch (code) {
             case 'STORED':
@@ -309,8 +348,14 @@ class MemcachedPool {
     async delete(key) {
         const client = await this._getPool(key).connect()
         const data = `delete ${key}`
-        const result = await client.command(data)
-        await client.release()
+        let result;
+        try {
+            result = await client.command(data)
+            client.release()
+        } catch (e) {
+            client.release(e)
+            throw e
+        }
         const code = getCode(result)
         switch (code) {
             case 'DELETED':
